@@ -52,7 +52,7 @@ void DirectXCommon::Finalize() {
 	ImGui_ImplDX12_Shutdown();
 	ImGui_ImplWin32_Shutdown();
 	ImGui::DestroyContext();
-}
+}	
 
 void DirectXCommon::PreDraw() {
 	// バックバッファの番号を取得（2つなので0番か1番）

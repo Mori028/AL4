@@ -1,5 +1,8 @@
 ﻿#include "GameScene.h"
+#include "Model.h"
 #include <cassert>
+#include <sstream>
+#include <iomanip>
 
 using namespace DirectX;
 
@@ -10,7 +13,13 @@ GameScene::GameScene()
 GameScene::~GameScene()
 {
 	delete spriteBG;
-	delete object3d;
+	delete objSkydome;
+	delete objGround;
+	delete objFighter;
+	delete modelSkydome;
+	delete modelGround;
+	delete modelplayer;
+	delete camera;
 }
 
 void GameScene::Initialize(DirectXCommon* dxCommon, Input* input)
@@ -28,43 +37,105 @@ void GameScene::Initialize(DirectXCommon* dxCommon, Input* input)
 	debugText.Initialize(debugTextTexNumber);
 
 	// テクスチャ読み込み
-	Sprite::LoadTexture(1, L"Resources/background.png");
+	/*Sprite::LoadTexture(1, L"Resources/background.png");*/
+
+    // カメラ生成
+	camera = new DebugCamera(WinApp::kWindowWidth, WinApp::kWindowHeight,input);
+
+	// カメラ注視点をセット
+	camera->SetTarget({0, 1, 0});
+	camera->SetDistance(3.0f);
+
+    // 3Dオブジェクトにカメラをセット
+	Object3d::SetCamera(camera);
 
 	// 背景スプライト生成
 	spriteBG = Sprite::Create(1, { 0.0f,0.0f });
 	// 3Dオブジェクト生成
-	object3d = Object3d::Create();
-	object3d->Update();
+	objSkydome = Object3d::Create();
+	objGround = Object3d::Create();
+	objFighter = Object3d::Create();
+	objBlock = Object3d::Create();
+
+	// テクスチャ2番に読み込み
+	/*Sprite::LoadTexture(2, L"Resources/texture.png");*/
+
+	modelSkydome = Model::CreateFromOBJ("skydome");
+	modelGround = Model::CreateFromOBJ("ground");
+	modelplayer = Model::CreateFromOBJ("player");
+	modelBlock = Model::CreateFromOBJ("Box");
+
+	objSkydome->SetModel(modelSkydome);
+	objGround->SetModel(modelGround);
+	objFighter->SetModel(modelplayer);
+	objBlock->SetModel(modelBlock);
+
+
+	objBlock->SetPosition({ 0,+1,+20 });
 }
 
 void GameScene::Update()
 {
-	// オブジェクト移動
-	if (input->PushKey(DIK_UP) || input->PushKey(DIK_DOWN) || input->PushKey(DIK_RIGHT) || input->PushKey(DIK_LEFT))
+	camera->Update();
+	Object3d::SetCamera(camera);
+
+	objSkydome->Update();
+	objGround->Update();
+	objFighter->Update();
+	objBlock->Update();
+
+	XMFLOAT3 position = objFighter->GetPosition();
+	if (input->TriggerKey(DIK_SPACE)) {
+		timerFlag = true;
+		position.y += 3.1;
+		if (position.y > 3.2)
+		{
+			position.y = +3.1;
+		}
+	}
+	if (coolTime <= 0 && timerFlag == true)
 	{
-		// 現在の座標を取得
-		XMFLOAT3 position = object3d->GetPosition();
-
-		// 移動後の座標を計算
-		if (input->PushKey(DIK_UP)) { position.y += 1.0f; }
-		else if (input->PushKey(DIK_DOWN)) { position.y -= 1.0f; }
-		if (input->PushKey(DIK_RIGHT)) { position.x += 1.0f; }
-		else if (input->PushKey(DIK_LEFT)) { position.x -= 1.0f; }
-
-		// 座標の変更を反映
-		object3d->SetPosition(position);
+		debugText.Print("bbbb", 50, 130, 1.0f);
+		timerFlag = false;
+		coolTime = 150;
+		position.y = 0;
 	}
 
-	// カメラ移動
-	if (input->PushKey(DIK_W) || input->PushKey(DIK_S) || input->PushKey(DIK_D) || input->PushKey(DIK_A))
+	if (timerFlag == true)
 	{
-		if (input->PushKey(DIK_W)) { Object3d::CameraMoveVector({ 0.0f,+1.0f,0.0f }); }
-		else if (input->PushKey(DIK_S)) { Object3d::CameraMoveVector({ 0.0f,-1.0f,0.0f }); }
-		if (input->PushKey(DIK_D)) { Object3d::CameraMoveVector({ +1.0f,0.0f,0.0f }); }
-		else if (input->PushKey(DIK_A)) { Object3d::CameraMoveVector({ -1.0f,0.0f,0.0f }); }
+		coolTime--;
+	}
+	objFighter->SetPosition(position);
+	XMFLOAT3 move = objBlock->GetPosition();
+	time--;
+	if (time <= 0)
+	{
+		move.z -= 2;
 	}
 
-	object3d->Update();
+	objBlock->SetPosition(move);
+
+#pragma region 当たり判定
+
+	posA = objFighter->GetPosition();
+	posB = objBlock->GetPosition();
+	{
+		float a = std::pow(posB.x - posA.x, 2.0f) + std::pow(posB.y - posA.y, 2.0f) +
+			std::pow(posB.z - posA.z, 2.0f);
+		float lenR = std::pow((objBlock->r + objFighter->r), 1.0);
+
+		if (a <= lenR) {
+			// 自キャラ
+			objFighter->OnColision();
+			// 敵キャラ
+			objBlock->OnColision();
+			debugText.Print("aaaaaaaa", 50, 110, 1.0f);
+	
+		}
+	}
+#pragma endregion
+
+	SceneChange();
 }
 
 void GameScene::Draw()
@@ -76,7 +147,7 @@ void GameScene::Draw()
 	// 背景スプライト描画前処理
 	Sprite::PreDraw(cmdList);
 	// 背景スプライト描画
-	spriteBG->Draw();
+	//spriteBG->Draw();
 
 	/// <summary>
 	/// ここに背景スプライトの描画処理を追加できる
@@ -93,8 +164,10 @@ void GameScene::Draw()
 	Object3d::PreDraw(cmdList);
 
 	// 3Dオブクジェクトの描画
-	object3d->Draw();
-
+	objSkydome->Draw();
+	objGround->Draw();
+	objFighter->Draw();
+	objBlock->Draw();
 	/// <summary>
 	/// ここに3Dオブジェクトの描画処理を追加できる
 	/// </summary>
@@ -111,6 +184,9 @@ void GameScene::Draw()
 	/// ここに前景スプライトの描画処理を追加できる
 	/// </summary>
 
+	//// 描画
+	//sprite1->Draw();
+	//sprite2->Draw();
 	// デバッグテキストの描画
 	debugText.DrawAll(cmdList);
 
@@ -118,3 +194,29 @@ void GameScene::Draw()
 	Sprite::PostDraw();
 #pragma endregion
 }
+
+void GameScene::Reset()
+{
+	objBlock->SetPosition({ 0,+1,+20 });
+	objFighter->SetIsDead(false);
+	objFighter->SetPosition({ 0,0,0 });
+	isEnd_ = false;
+	timerFlag = false;
+	time = 200;
+	coolTime = 100;
+}
+
+void GameScene::SceneChange()
+{
+	isEnd_ = false;
+ 	if (objFighter->IsDead()) {
+
+		nextScene_ = Scene::END;
+		isEnd_ = true;
+	}
+	if (objBlock->GetPosition().z <= -10) {
+		nextScene_ = Scene::CLREA;
+		isEnd_ = true;
+	}
+}
+
